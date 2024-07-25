@@ -96,9 +96,16 @@ namespace LogansFootLogicSystem
 			dist_jumpSphereVerticalOffset = col.transform.localPosition.y;
 		}
 
-		public void Init( Transform entityTransform, Transform perspectiveTransform, Rigidbody entityRigidBody, int mask )
+		/// <summary>
+		/// Initializes the foot system. Call this inside the Start() for the player/entity script that this footsystem will serve.
+		/// </summary>
+		/// <param name="rootTransform">The transform at the root of the character heirarchy. The transform that should actually translate in response to movement input</param>
+		/// <param name="perspectiveTransform">The transform for the perspective object that will allow rotation.</param>
+		/// <param name="entityRigidBody"></param>
+		/// <param name="mask"></param>
+		public void Init( Transform rootTransform, Transform perspectiveTransform, Rigidbody entityRigidBody, int mask )
 		{
-			trans_entity = entityTransform;
+			trans_entity = rootTransform;
 			trans_perspective = perspectiveTransform;
 			rb = entityRigidBody;
 			mask_Walkable = mask;
