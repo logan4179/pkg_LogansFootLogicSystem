@@ -107,6 +107,7 @@ namespace LogansFootLogicSystem
 		{
 			trans_entity = rootTransform;
 			trans_perspective = perspectiveTransform;
+
 			rb = entityRigidBody;
 			mask_Walkable = mask;
 		}
