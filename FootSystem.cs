@@ -20,6 +20,15 @@ namespace LogansFootLogicSystem
 		//[Header("[-------- STATE ---------]")]
 		protected LFLS_FootState myFootState;
 		public LFLS_FootState MyFootState => myFootState;
+		/// <summary>Position that is considered directly underneath this foot system </summary>
+		private Vector3 currentGroundPos;
+		/// <summary>Position that is considered directly underneath this foot system </summary>
+		public Vector3 CurrentGroundPos => currentGroundPos;
+
+		/// <summary>Normal describing geometry currently underfoot. </summary>
+		private Vector3 currentGroundNormal;
+		/// <summary>Normal describing geometry currently underfoot. </summary>
+		public Vector3 CurrentGroundNormal => currentGroundNormal;
 
 		//[Header("[-------- GENERAL STATS ---------]")]
 
@@ -31,8 +40,8 @@ namespace LogansFootLogicSystem
 		private float thresh_groundedNormal = 0.85f;
 		//-------------------------------------------------------
 		private float dist_jumpSphereVerticalOffset;
-		private float radius_jumpSphere;
-		private Vector3 v_groundNormal;
+		private float cachedRadius_jumpSphere;
+
 
 		[Header("[-------- JUMPING ---------]")]
 		public float JumpForce = 570f;
@@ -75,6 +84,9 @@ namespace LogansFootLogicSystem
 		/// </summary>
 		public float CurrentHorizontalSpeed => currentHorizontalSpeed;
 
+		[Header("[------ DEBUG ------]")]
+		[SerializeField] private string DbgState;
+
 		private void OnEnable()
 		{
 			OnJump = new UnityEvent();
@@ -92,7 +104,10 @@ namespace LogansFootLogicSystem
 		private void Awake()
 		{
 			SphereCollider col = GetComponent<SphereCollider>();
-			radius_jumpSphere = col.radius * transform.localScale.x * 1.05f;
+			//cachedRadius_jumpSphere = col.radius * transform.localScale.x * 1.05f;
+			//cachedRadius_jumpSphere = col.radius * transform.localScale.x * 1.5f;
+			cachedRadius_jumpSphere = col.radius * transform.localScale.x * 1.1f;
+
 			dist_jumpSphereVerticalOffset = col.transform.localPosition.y;
 		}
 
@@ -156,28 +171,38 @@ namespace LogansFootLogicSystem
 			#region UPDATE FOOTING---------------//////////////////
 			LFLS_FootState oldFootState = myFootState;
 
+			DbgState = $"";
 			Vector3 v_sphereStart = trans_entity.position + Vector3.up * dist_jumpSphereVerticalOffset;
-			if ( Physics.CheckSphere(v_sphereStart, radius_jumpSphere, mask_Walkable) )
+			if ( Physics.CheckSphere(v_sphereStart, cachedRadius_jumpSphere, mask_Walkable) )
 			{
+				DbgState += $"checksphere success\n";
 				myFootState = LFLS_FootState.Grounded;
 
 				RaycastHit hitInfo = new RaycastHit();
-				if ( Physics.Linecast(v_sphereStart, v_sphereStart + (Vector3.down * radius_jumpSphere * 1.05f), out hitInfo, mask_Walkable) )
+				if ( Physics.Linecast(v_sphereStart, v_sphereStart + (Vector3.down * cachedRadius_jumpSphere * 1.05f), out hitInfo, mask_Walkable) )
 				{
-					v_groundNormal = hitInfo.normal;
-					if ( v_groundNormal.y < thresh_groundedNormal )
+					DbgState += $"linecast success\n";
+
+					currentGroundPos = hitInfo.point;
+					currentGroundNormal = hitInfo.normal;
+					if ( currentGroundNormal.y < thresh_groundedNormal )
 					{
 						myFootState = LFLS_FootState.Sliding;
 					}
 				}
 				else
 				{
-					v_groundNormal = Vector3.up;
+					DbgState += $"linecast failed \n";
+
+					currentGroundNormal = Vector3.up;
+					currentGroundPos = rb.position;
 				}
 			}
 			else
 			{
 				myFootState = LFLS_FootState.Airborn;
+				DbgState += $"checksphere failed \n";
+
 			}
 
 			if ( myFootState == LFLS_FootState.Airborn && oldFootState != LFLS_FootState.Airborn )
@@ -190,6 +215,13 @@ namespace LogansFootLogicSystem
 			currentHorizontalSpeed = (1 / Time.deltaTime) * LFLS_Utilities.FlatVector(lastPos - trans_entity.position).magnitude;
 			lastPos = trans_entity.position;
 			flag_justJumped = false; //resets here every frame
+
+			DbgState += $"myFootState: '{myFootState}'\n" +
+				$"{nameof(currentGroundPos)}: '{currentGroundPos}'\n" +
+				$"{nameof(currentGroundNormal)}: '{currentGroundNormal}'\n" +
+				$"{nameof(cachedRadius_jumpSphere)}: '{cachedRadius_jumpSphere}'\n" +
+				$"{nameof(mask_Walkable)}: '{mask_Walkable}'\n" +
+				$"";
 		}
 
 		private Vector3 v_counterForce = Vector3.zero;
@@ -203,7 +235,7 @@ namespace LogansFootLogicSystem
 			{
 				if ( myFootState == LFLS_FootState.Grounded || myFootState == LFLS_FootState.Sliding )
 				{
-					Vector3 desiredMove = Vector3.ProjectOnPlane(v_MoveInput, v_groundNormal).normalized;
+					Vector3 desiredMove = Vector3.ProjectOnPlane(v_MoveInput, currentGroundNormal).normalized;
 					rb.MovePosition( 
 						trans_entity.position + (desiredMove.normalized * currentTargetSpeed * moveInputMagnitude * Time.fixedDeltaTime)
 						);
