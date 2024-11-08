@@ -13,20 +13,22 @@ namespace LogansFootLogicSystem
 		[Space(10f)]
 
 		//[Header("[-------- REFERENCE (INTERNAL) ---------]")]
-		protected Transform trans_entity;
-		protected Transform trans_perspective;
+		[SerializeField, Tooltip("The root Transform that you want the foot system to move")]
+		protected Transform trans_root;
+		[SerializeField, Tooltip("The Transform that you want the foot system to rotate")]
+		protected Transform trans_rotate;
 		protected Rigidbody rb;
 
 		//[Header("[-------- STATE ---------]")]
 		protected LFLS_FootState myFootState;
 		public LFLS_FootState MyFootState => myFootState;
 		/// <summary>Position that is considered directly underneath this foot system </summary>
-		private Vector3 currentGroundPos;
+		protected Vector3 currentGroundPos;
 		/// <summary>Position that is considered directly underneath this foot system </summary>
 		public Vector3 CurrentGroundPos => currentGroundPos;
 
 		/// <summary>Normal describing geometry currently underfoot. </summary>
-		private Vector3 currentGroundNormal;
+		protected Vector3 currentGroundNormal;
 		/// <summary>Normal describing geometry currently underfoot. </summary>
 		public Vector3 CurrentGroundNormal => currentGroundNormal;
 
@@ -35,12 +37,12 @@ namespace LogansFootLogicSystem
 
 		[Header("[-------- GROUND CHECKING ---------]")]
 		[Tooltip("Force used to resist the rigidbody momentum, only when grounded. Similar to rigidbody friction, but managed more like character movement.")]
-		private float force_MomentumResistance = 0.4f;
+		protected float force_MomentumResistance = 0.4f;
 		[SerializeField, Range(0f, 1f), Tooltip("How upright the normal of the ground below the character needs to be in order to be considered 'stable'. When 'stable', the character naturally applies momentum resistance.")]
-		private float thresh_groundedNormal = 0.85f;
+		protected float thresh_groundedNormal = 0.85f;
 		//-------------------------------------------------------
-		private float dist_jumpSphereVerticalOffset;
-		private float cachedRadius_jumpSphere;
+		protected float dist_jumpSphereVerticalOffset;
+		protected float cachedRadius_jumpSphere;
 
 
 		[Header("[-------- JUMPING ---------]")]
@@ -55,34 +57,37 @@ namespace LogansFootLogicSystem
 
 		[Tooltip("Amount of force in the y direction needed to trigger the land animation. Note that land force is measured negatively, so a negative number means more force required to trigger the landing condition")]
 		public float Threshold_landForce = 8f;
-		private int mask_Walkable;
+		[Tooltip("Layer mask that represents 'walkable ground' in your game")]
+		public int mask_Walkable;
 		/// <summary>
 		/// Mask for things that should be considered by the footsystem to potentially effect the foot state.
 		/// </summary>
-		public int Mask_Walkable { get {return mask_Walkable;} set {mask_Walkable = value;} }
+		public int Mask_Walkable { get {return mask_Walkable; } set { mask_Walkable = value;} }
 
         [HideInInspector] public UnityEvent OnJump;
 		[HideInInspector] public UnityEvent OnLeaveGround;
 		[HideInInspector] public UnityEvent OnLand;
 
 		//[Header("[-------- INPUT ---------]")]
-		private float axialInputValue = 0f;
-		private float lateralInputValue = 0f;
-		private Vector3 v_MoveInput = Vector3.zero;
-		private float moveInputMagnitude;
+		protected float axialInputValue = 0f;
+		protected float lateralInputValue = 0f;
+		protected Vector3 v_MoveInput = Vector3.zero;
+		protected float moveInputMagnitude;
 
 
 		/// <summary>
 		/// Speed that this system should move at.
 		/// </summary>
-		private float currentTargetSpeed;
-		private Vector3 v_rbFlatVelocity;
+		protected float currentTargetSpeed;
+		protected Vector3 v_rbFlatVelocity;
 
-		private float currentHorizontalSpeed = 0f;
+		protected float currentHorizontalSpeed = 0f;
 		/// <summary>
 		/// Keeps track of the horizontal speed this entity is moving.
 		/// </summary>
 		public float CurrentHorizontalSpeed => currentHorizontalSpeed;
+		protected float currentSpeed = 0f;
+		public float CurrentSpeed => currentSpeed;
 
 		[Header("[------ DEBUG ------]")]
 		[SerializeField] private string DbgState;
@@ -101,30 +106,16 @@ namespace LogansFootLogicSystem
 			OnLand.RemoveAllListeners();
 		}
 
-		private void Awake()
+		protected void Awake()
 		{
+			rb = trans_root.GetComponent<Rigidbody>();
+
 			SphereCollider col = GetComponent<SphereCollider>();
 			//cachedRadius_jumpSphere = col.radius * transform.localScale.x * 1.05f;
 			//cachedRadius_jumpSphere = col.radius * transform.localScale.x * 1.5f;
 			cachedRadius_jumpSphere = col.radius * transform.localScale.x * 1.1f;
 
 			dist_jumpSphereVerticalOffset = col.transform.localPosition.y;
-		}
-
-		/// <summary>
-		/// Initializes the foot system. Call this inside the Start() for the player/entity script that this footsystem will serve.
-		/// </summary>
-		/// <param name="rootTransform">The transform at the root of the character heirarchy. The transform that should actually translate in response to movement input</param>
-		/// <param name="perspectiveTransform">The transform for the perspective object that will allow rotation.</param>
-		/// <param name="entityRigidBody"></param>
-		/// <param name="mask"></param>
-		public void Init( Transform rootTransform, Transform perspectiveTransform, Rigidbody entityRigidBody, int mask )
-		{
-			trans_entity = rootTransform;
-			trans_perspective = perspectiveTransform;
-
-			rb = entityRigidBody;
-			mask_Walkable = mask;
 		}
 
 		/// <summary>
@@ -140,9 +131,27 @@ namespace LogansFootLogicSystem
 			currentTargetSpeed = targetSpeed;
 			axialInputValue = axialMoveInput;
 			lateralInputValue = lateralMoveInput;
-			v_MoveInput = (trans_perspective.forward * axialMoveInput) + (trans_perspective.right * lateralInputValue);
+
+			v_MoveInput = 
+				(trans_rotate.forward * axialMoveInput) +
+				(trans_rotate.right * lateralInputValue);
+
 			moveInputMagnitude = Mathf.Max(Mathf.Abs(axialInputValue), Mathf.Abs(lateralInputValue));
-			trans_perspective.Rotate(Vector3.up, hRotAmount);
+			trans_rotate.Rotate(Vector3.up, hRotAmount);
+		}
+
+		public void UpdateValues(float targetSpeed, float axialMoveInput, float lateralMoveInput, float hRotAmount, Vector3 perspectiveForward, Vector3 perspectiveRight )
+		{
+			currentTargetSpeed = targetSpeed;
+			axialInputValue = axialMoveInput;
+			lateralInputValue = lateralMoveInput;
+
+			v_MoveInput =
+				(perspectiveForward * axialMoveInput) +
+				(perspectiveRight * lateralInputValue);
+
+			moveInputMagnitude = Mathf.Max(Mathf.Abs(axialInputValue), Mathf.Abs(lateralInputValue));
+			trans_rotate.Rotate(Vector3.up, hRotAmount);
 		}
 
 		protected bool flag_justJumped;
@@ -158,7 +167,7 @@ namespace LogansFootLogicSystem
 			float MoveInputMagnitude = Mathf.Max( Mathf.Abs(axialInputValue), Mathf.Abs(lateralInputValue) );
 			rb.velocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z); //This is so that you always jump the same height
 
-			Vector3 v_jumpDir = (trans_entity.up * JumpForce) + (v_MoveInput.normalized * Mathf.Clamp(currentHorizontalSpeed, 0f, currentTargetSpeed) * HorizontalJumpForceBias);
+			Vector3 v_jumpDir = (trans_root.up * JumpForce) + (v_MoveInput.normalized * Mathf.Clamp(currentHorizontalSpeed, 0f, currentTargetSpeed) * HorizontalJumpForceBias);
 			rb.AddForce( v_jumpDir, ForceMode.Impulse );
 
 			OnJump.Invoke();
@@ -172,14 +181,14 @@ namespace LogansFootLogicSystem
 			LFLS_FootState oldFootState = myFootState;
 
 			DbgState = $"";
-			Vector3 v_sphereStart = trans_entity.position + Vector3.up * dist_jumpSphereVerticalOffset;
-			if ( Physics.CheckSphere(v_sphereStart, cachedRadius_jumpSphere, mask_Walkable) )
+			Vector3 v_sphereStart = trans_root.position + Vector3.up * dist_jumpSphereVerticalOffset;
+			if ( Physics.CheckSphere(v_sphereStart, cachedRadius_jumpSphere, Mask_Walkable) )
 			{
 				DbgState += $"checksphere success\n";
 				myFootState = LFLS_FootState.Grounded;
 
 				RaycastHit hitInfo = new RaycastHit();
-				if ( Physics.Linecast(v_sphereStart, v_sphereStart + (Vector3.down * cachedRadius_jumpSphere * 1.05f), out hitInfo, mask_Walkable) )
+				if ( Physics.Linecast(v_sphereStart, v_sphereStart + (Vector3.down * cachedRadius_jumpSphere * 1.05f), out hitInfo, Mask_Walkable) )
 				{
 					DbgState += $"linecast success\n";
 
@@ -212,15 +221,16 @@ namespace LogansFootLogicSystem
 			}
 			#endregion
 
-			currentHorizontalSpeed = (1 / Time.deltaTime) * LFLS_Utilities.FlatVector(lastPos - trans_entity.position).magnitude;
-			lastPos = trans_entity.position;
+			currentSpeed = Vector3.Distance(trans_root.position, lastPos) / Time.deltaTime;
+			currentHorizontalSpeed = (1 / Time.deltaTime) * LFLS_Utilities.FlatVector(lastPos - trans_root.position).magnitude;
+			lastPos = trans_root.position;
 			flag_justJumped = false; //resets here every frame
 
 			DbgState += $"myFootState: '{myFootState}'\n" +
 				$"{nameof(currentGroundPos)}: '{currentGroundPos}'\n" +
 				$"{nameof(currentGroundNormal)}: '{currentGroundNormal}'\n" +
 				$"{nameof(cachedRadius_jumpSphere)}: '{cachedRadius_jumpSphere}'\n" +
-				$"{nameof(mask_Walkable)}: '{mask_Walkable}'\n" +
+				$"{nameof(Mask_Walkable)}: '{Mask_Walkable}'\n" +
 				$"";
 		}
 
@@ -237,7 +247,7 @@ namespace LogansFootLogicSystem
 				{
 					Vector3 desiredMove = Vector3.ProjectOnPlane(v_MoveInput, currentGroundNormal).normalized;
 					rb.MovePosition( 
-						trans_entity.position + (desiredMove.normalized * currentTargetSpeed * moveInputMagnitude * Time.fixedDeltaTime)
+						trans_root.position + (desiredMove.normalized * currentTargetSpeed * moveInputMagnitude * Time.fixedDeltaTime)
 						);
 				}
 				else if ( myFootState == LFLS_FootState.Airborn )
@@ -265,9 +275,16 @@ namespace LogansFootLogicSystem
 				rb.AddForce(v_counterForce * 1000f, ForceMode.Force);
 				//if (DbgPrint) print($"resisting with: '{v_counterForce}'");
 			}
+		}
 
-			currentHorizontalSpeed = (1 / Time.deltaTime) * LFLS_Utilities.FlatVector(lastPos - trans_entity.position).magnitude;
-			lastPos = trans_entity.position;
+		public bool CheckIfKosher()
+		{
+			if ( trans_root == null || rb == null )
+			{
+				return false;
+			}
+
+			return true;
 		}
 	}
 }

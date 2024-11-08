@@ -29,9 +29,7 @@ namespace LogansFootLogicSystem
 
 		void Start()
 		{
-			footSystem.Init(
-				GetComponent<Transform>(), Trans_perspective, GetComponent<Rigidbody>(), LayerMask.GetMask("lr_EnvSolid")
-				);
+			footSystem.mask_Walkable = LayerMask.GetMask("lr_EnvSolid");
 
 			RecalculateLookValues();
 		}
