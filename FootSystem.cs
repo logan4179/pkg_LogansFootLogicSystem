@@ -41,7 +41,6 @@ namespace LogansFootLogicSystem
 		[SerializeField, Range(0f, 1f), Tooltip("How upright the normal of the ground below the character needs to be in order to be considered 'stable'. When 'stable', the character naturally applies momentum resistance.")]
 		protected float thresh_groundedNormal = 0.85f;
 		//-------------------------------------------------------
-		protected float dist_jumpSphereVerticalOffset;
 		protected float cachedRadius_jumpSphere;
 
 
@@ -78,7 +77,12 @@ namespace LogansFootLogicSystem
 		/// <summary>
 		/// Speed that this system should move at.
 		/// </summary>
-		protected float currentTargetSpeed;
+		protected float targetSpeed_cached;
+
+		protected float hzntlRotAmt_cached;
+
+		protected bool rotateImmediate_cached = true;
+
 		protected Vector3 v_rbFlatVelocity;
 
 		protected float currentHorizontalSpeed = 0f;
@@ -111,24 +115,20 @@ namespace LogansFootLogicSystem
 			rb = trans_root.GetComponent<Rigidbody>();
 
 			SphereCollider col = GetComponent<SphereCollider>();
-			//cachedRadius_jumpSphere = col.radius * transform.localScale.x * 1.05f;
-			//cachedRadius_jumpSphere = col.radius * transform.localScale.x * 1.5f;
 			cachedRadius_jumpSphere = col.radius * transform.localScale.x * 1.1f;
-
-			dist_jumpSphereVerticalOffset = col.transform.localPosition.y;
 		}
 
 		/// <summary>
 		/// "Drives" the entity by suppliying the movement input values as well as the current target speed for the 
 		/// entity. Call this method in an outside script's update method.
 		/// </summary>
-		/// <param name="targetSpeed"></param>
+		/// <param name="targetSpeed">Speed per second to move the rigidbody</param>
 		/// <param name="axialMoveInput">Typically the "forward-backward", or "front-to-back" movement input value</param>
 		/// <param name="lateralMoveInput">Typically the "horizontal", or "sideways" movement input value.</param>
 		/// <param name="hRotAmount">Horizontal rotation input value.</param>
-		public void UpdateValues( float targetSpeed, float axialMoveInput, float lateralMoveInput, float hRotAmount )
+		public void UpdateValues(float targetSpeed, float axialMoveInput, float lateralMoveInput, float hRotAmount, bool rotateImmediate = true )
 		{
-			currentTargetSpeed = targetSpeed;
+			targetSpeed_cached = targetSpeed;
 			axialInputValue = axialMoveInput;
 			lateralInputValue = lateralMoveInput;
 
@@ -137,12 +137,32 @@ namespace LogansFootLogicSystem
 				(trans_rotate.right * lateralInputValue);
 
 			moveInputMagnitude = Mathf.Max(Mathf.Abs(axialInputValue), Mathf.Abs(lateralInputValue));
-			trans_rotate.Rotate(Vector3.up, hRotAmount);
+
+			if( rotateImmediate )
+			{
+				trans_rotate.Rotate(Vector3.up, hRotAmount);
+			}
+            else
+            {
+                hzntlRotAmt_cached = hRotAmount;
+            }
 		}
 
-		public void UpdateValues(float targetSpeed, float axialMoveInput, float lateralMoveInput, float hRotAmount, Vector3 perspectiveForward, Vector3 perspectiveRight )
+		/// <summary>
+		/// "Drives" the entity by supplying movement and rotation values. This overload allows you to move 
+		/// in the direction of a separate supplied transform, such as a third person camera following a character.
+		/// </summary>
+		/// <param name="targetSpeed"></param>
+		/// <param name="axialMoveInput"></param>
+		/// <param name="lateralMoveInput"></param>
+		/// <param name="hRotAmount"></param>
+		/// <param name="perspectiveForward"></param>
+		/// <param name="perspectiveRight"></param>
+		public void UpdateValues( 
+			float targetSpeed, float axialMoveInput, float lateralMoveInput, float hRotAmount, Vector3 perspectiveForward, Vector3 perspectiveRight, bool rotateImmediate = true
+			)
 		{
-			currentTargetSpeed = targetSpeed;
+			targetSpeed_cached = targetSpeed;
 			axialInputValue = axialMoveInput;
 			lateralInputValue = lateralMoveInput;
 
@@ -150,8 +170,45 @@ namespace LogansFootLogicSystem
 				(perspectiveForward * axialMoveInput) +
 				(perspectiveRight * lateralInputValue);
 
-			moveInputMagnitude = Mathf.Max(Mathf.Abs(axialInputValue), Mathf.Abs(lateralInputValue));
-			trans_rotate.Rotate(Vector3.up, hRotAmount);
+			moveInputMagnitude = Mathf.Max( Mathf.Abs(axialInputValue), Mathf.Abs(lateralInputValue) );
+			if (rotateImmediate)
+			{
+				trans_rotate.Rotate(Vector3.up, hRotAmount);
+			}
+			else
+			{
+				hzntlRotAmt_cached = hRotAmount;
+			}
+		}
+
+		public void TravelToward( Vector3 pos, float distThresh, float mvSpd, float rotAngThresh, float rotSpd, Vector3 rotNrml )
+		{
+			Vector3 v_toGoal = Vector3.Normalize( pos - trans_root.position );
+
+			Vector3 v_nrml_calculated = Vector3.RotateTowards(
+				trans_rotate.up, rotNrml, rotSpd * Time.fixedDeltaTime, 0f
+			);
+			float dot_facingToPos = Vector3.Dot( trans_rotate.forward, v_toGoal );
+			float dot_upToNrml = Vector3.Dot( trans_rotate.up, rotNrml );
+
+			Quaternion q = Quaternion.identity;
+			Vector3 vRot = Vector3.zero;
+			if ( dot_facingToPos < -0.98f && dot_upToNrml > 0.95f ) //The idea of this block is that it forces the transform to rotate 'rigthwards' if we're pretty much facing the opposite direction of the goal, that way you don't get weird rotating
+			{
+				//vRot = Vector3.RotateTowards(trans.forward, v_toGoal, rotSpeed_passed * Time.fixedDeltaTime, 0.0f);
+				vRot = Vector3.RotateTowards(trans_rotate.forward, trans_rotate.right, rotSpd * Time.fixedDeltaTime, 0.0f);
+				q = Quaternion.LookRotation(vRot, trans_rotate.up);
+			}
+			else
+			{
+				//vRot = Vector3.RotateTowards(trans.forward, v_toGoal, rotSpeed_passed * Time.fixedDeltaTime, 0.0f);
+				vRot = Vector3.RotateTowards(trans_rotate.forward, v_toGoal, rotSpd * Time.fixedDeltaTime, 0.0f);
+				q = Quaternion.LookRotation(vRot, v_nrml_calculated);
+			}
+
+			//rb.MoveRotation(q);
+			//UpdateValues(mvSpd, float axialMoveInput, float lateralMoveInput, float hRotAmount, bool rotateImmediate = true)
+
 		}
 
 		protected bool flag_justJumped;
@@ -161,32 +218,31 @@ namespace LogansFootLogicSystem
 		/// <param name="axialMoveInput">Commonlhy known as "forward facing" movement input</param>
 		/// <param name="lateralMoveInput">Commonlhy known as "side facing" movement input</param>
 		/// <param name="amHoldingRun">Whether the run key is being held</param>
-
 		public void Jump()
 		{
 			float MoveInputMagnitude = Mathf.Max( Mathf.Abs(axialInputValue), Mathf.Abs(lateralInputValue) );
 			rb.velocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z); //This is so that you always jump the same height
 
-			Vector3 v_jumpDir = (trans_root.up * JumpForce) + (v_MoveInput.normalized * Mathf.Clamp(currentHorizontalSpeed, 0f, currentTargetSpeed) * HorizontalJumpForceBias);
+			Vector3 v_jumpDir = (trans_root.up * JumpForce) + (v_MoveInput.normalized * Mathf.Clamp(currentHorizontalSpeed, 0f, targetSpeed_cached) * HorizontalJumpForceBias);
 			rb.AddForce( v_jumpDir, ForceMode.Impulse );
 
 			OnJump.Invoke();
 			flag_justJumped = true;
 		}
 
-		private Vector3 lastPos;
+		protected Vector3 lastPos;
 		protected void LateUpdate()
 		{
 			#region UPDATE FOOTING---------------//////////////////
 			LFLS_FootState oldFootState = myFootState;
 
 			DbgState = $"";
-			Vector3 v_sphereStart = trans_root.position + Vector3.up * dist_jumpSphereVerticalOffset;
-			if ( Physics.CheckSphere(v_sphereStart, cachedRadius_jumpSphere, Mask_Walkable) )
+			Vector3 v_sphereStart = trans_root.position + trans_root.up * transform.localPosition.y; 
+			if ( Physics.CheckSphere(/*v_sphereStart*/transform.localPosition, cachedRadius_jumpSphere, Mask_Walkable) )
 			{
 				DbgState += $"checksphere success\n";
 				myFootState = LFLS_FootState.Grounded;
-
+				
 				RaycastHit hitInfo = new RaycastHit();
 				if ( Physics.Linecast(v_sphereStart, v_sphereStart + (Vector3.down * cachedRadius_jumpSphere * 1.05f), out hitInfo, Mask_Walkable) )
 				{
@@ -235,19 +291,24 @@ namespace LogansFootLogicSystem
 		}
 
 		private Vector3 v_counterForce = Vector3.zero;
-		private void FixedUpdate()
+		protected void FixedUpdate()
 		{
 			v_rbFlatVelocity = LFLS_Utilities.FlatVector(rb.velocity);
 			float dot_rbVelRelativeToMoveInput = Vector3.Dot(v_rbFlatVelocity.normalized, v_MoveInput.normalized);
 			v_counterForce = Vector3.zero;
 
+			if( !rotateImmediate_cached )
+			{
+				trans_rotate.Rotate( Vector3.up, hzntlRotAmt_cached * Time.fixedDeltaTime );
+			}
+
 			if ( moveInputMagnitude > 0f )
 			{
 				if ( myFootState == LFLS_FootState.Grounded || myFootState == LFLS_FootState.Sliding )
 				{
-					Vector3 desiredMove = Vector3.ProjectOnPlane(v_MoveInput, currentGroundNormal).normalized;
+					Vector3 projectedMove = Vector3.ProjectOnPlane(v_MoveInput, currentGroundNormal).normalized;
 					rb.MovePosition( 
-						trans_root.position + (desiredMove.normalized * currentTargetSpeed * moveInputMagnitude * Time.fixedDeltaTime)
+						trans_root.position + (projectedMove.normalized * targetSpeed_cached * moveInputMagnitude * Time.fixedDeltaTime)
 						);
 				}
 				else if ( myFootState == LFLS_FootState.Airborn )
@@ -275,6 +336,16 @@ namespace LogansFootLogicSystem
 				rb.AddForce(v_counterForce * 1000f, ForceMode.Force);
 				//if (DbgPrint) print($"resisting with: '{v_counterForce}'");
 			}
+		}
+
+		public void OrientRoot( Vector3 normal )
+		{
+
+		}
+
+		private void OnDrawGizmos()
+		{
+			
 		}
 
 		public bool CheckIfKosher()
